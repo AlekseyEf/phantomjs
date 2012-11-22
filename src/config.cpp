@@ -72,6 +72,7 @@ static const struct QCommandLineConfigEntry flags[] =
     { QCommandLine::Option, '\0', "webdriver-logfile", "File where to write the WebDriver's Log (default 'none') (NOTE: needs '--webdriver') ", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "webdriver-loglevel", "WebDriver Logging Level: (supported: 'ERROR', 'WARN', 'INFO', 'DEBUG') (default 'INFO') (NOTE: needs '--webdriver') ", QCommandLine::Optional },
     { QCommandLine::Option, '\0', "webdriver-selenium-grid-hub", "URL to the Selenium Grid HUB: 'URL_TO_HUB' (default 'none') (NOTE: needs '--webdriver') ", QCommandLine::Optional },
+    { QCommandLine::Option, '\0', "disable-javascript", "Disables javascript on web page: 'yes' or 'no' (default)", QCommandLine::Optional }, 
     { QCommandLine::Param, '\0', "script", "Script", QCommandLine::Flags(QCommandLine::Optional|QCommandLine::ParameterFence)},
     { QCommandLine::Param, '\0', "argument", "Script argument", QCommandLine::OptionalMultiple },
     { QCommandLine::Switch, 'w', "wd", "Equivalent to '--webdriver' option above", QCommandLine::Optional },
@@ -751,4 +752,12 @@ void Config::setSslCertificatesPath(const QString& sslCertificatesPath)
     } else {
         m_sslCertificatesPath = sslCertificatesPath;
     }
+}
+bool Config::isJavascriptEnabled() const
+{
+    return m_javascriptEnabled;
+}
+void Config::setJavascriptEnabled(bool value)
+{
+    m_javascriptEnabled = value;
 }
