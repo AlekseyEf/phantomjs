@@ -195,6 +195,8 @@ describe("WebPage object", function() {
 
     expectHasProperty(page, 'event');
     expectHasProperty(page, 'cookies');
+    expectHasProperty(page, 'url');
+    expectHasProperty(page, 'frameUrl');
 
     checkViewportSize(page, {height:300,width:400});
 
@@ -2067,3 +2069,338 @@ describe("WebPage render image", function(){
         p.close();
     });
 });
+
+describe("WebPage network request headers handling", function() {
+    it("should add HTTP header to a network request", function() {
+        var page = require("webpage").create();
+        var server = require("webserver").create();
+        var isCustomHeaderPresented = false;
+
+        server.listen(12345, function(response) {
+            if (response.headers["CustomHeader"] && response.headers["CustomHeader"] === "CustomValue") {
+                isCustomHeaderPresented = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", "CustomValue");
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function(status) {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waitsFor(function() {
+            return isCustomHeaderPresented;
+        }, "isCustomHeaderPresented should be received", 3000);
+
+        runs(function() {
+            page.close();
+            server.close();
+        });
+    });
+
+    it("should remove HTTP header from a network request", function() {
+        var page = require("webpage").create();
+        page.customHeaders = {"CustomHeader": "CustomValue"};
+
+        var server = require("webserver").create();
+        var handled = false;
+
+        server.listen(12345, function(request) {
+            if (request.headers["CustomHeader"] == null) {
+                handled = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", null);
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function(status) {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waits(3000);
+
+        runs(function() {
+            expect(handled).toBeTruthy();
+            page.close();
+            server.close();
+        });
+    });
+
+    it("should set HTTP header value for a network request", function() {
+        var page = require("webpage").create();
+        page.customHeaders = {"CustomHeader": "CustomValue"};
+
+        var server = require("webserver").create();
+        var handled = false;
+
+        server.listen(12345, function(request) {
+            if (request.headers["CustomHeader"] &&
+                request.headers["CustomHeader"] === "ChangedCustomValue") {
+                handled = true;
+            }
+        });
+
+        page.onResourceRequested = function(requestData, request) {
+            expect(typeof request.setHeader).toEqual("function");
+            request.setHeader("CustomHeader", "ChangedCustomValue");
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345", function(status) {
+                expect(status).toEqual("success");
+            });
+        });
+
+        waits(3000);
+
+        runs(function() {
+            expect(handled).toBeTruthy();
+            page.close();
+            server.close();
+        });
+    });
+});
+
+describe("WebPage should encode URLs properly", function () {
+
+    var server;
+    var page;
+    var complete;
+
+    beforeEach(function() {
+        complete = false;
+        page = require("webpage").create();
+        page.settings.resourceTimeout = 100;
+        server = require("webserver").create();
+        server.listen(12345, function(request, response) {
+
+            function redirectTo(response, target) {
+                response.statusCode = 302;
+                response.setHeader("Location", target);
+                response.write(
+                    '<!doctype html><a href="'+target+'">Go here</a>');
+            }
+            function escapeHTML(s) {
+                return s.replace(/&/g, '&amp;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            // URLs below contain text encoded in Shift_JIS and will
+            // not round-trip correctly if misinterpreted as UTF-8.
+            // Comments indicate Unicode equivalent.
+            response.setHeader('Content-Type', 'text/html');
+            switch (request.url) {
+            case "/":
+                redirectTo(response, "/%83y%81[%83W");
+                break;
+
+            case "/f":
+                response.write(
+                  '<!doctype html public "-//W3C//DTD HTML 4.01 Frameset//EN"'+
+                  ' "http://www.w3.org/TR/html4/frameset.dtd">'+
+                  '<html><head><title>framed</title></head>'+
+                  '<frameset cols="50%,50%">'+
+                  '<frame src="/%98g" name="a">'+
+                  '<frame src="/%95s%96%D1%82%C8%98_%91%88" name="b">'+
+                  '</frameset>');
+                break;
+
+            case "/r":
+                response.write(
+                    '<!doctype html>'+
+                    '<script src="/%8F%91"></script>');
+                break;
+
+            case "/re":
+                response.write(
+                    '<!doctype html>'+
+                    '<img src="/%8C%CC%8F%E1">'+
+                    '<img src="/%89i%8Bv">');
+
+            case "/%83y%81%5B%83W": // ページ
+            case "/%98g": // 枠
+                response.write("<!doctype html><h1>PASS</h1>");
+                break;
+
+            case "/%95s%96%D1%82%C8%98_%91%88": // 不毛な論争
+                response.write("<!doctype html><h1>FLAME</h1>");
+                break;
+
+            case "/%8F%91": // 書
+                response.setHeader('Content-Type', 'application/javascript');
+                response.write(
+                    'window.onload=function(){'+
+                        'document.body.innerHTML="<h1>PASS</h1>";};');
+                break;
+
+            case "/%8C%CC%8F%E1": // 故障
+                response.statusCode = 500;
+                response.write("<!doctype html>internal server error");
+                break;
+
+            case "/%89i%8Bv": // 永久
+                response.statusCode = 204;
+                setTimeout(function(){response.write('');response.close();},
+                           5000);
+                return;
+
+            default:
+                response.statusCode = 404;
+                response.write("<!doctype html><title>404 Not Found</title>"+
+                               "<p>URL not found: "+escapeHTML(request.url)+
+                               "</p>");
+            }
+
+            response.close();
+        });
+    });
+    afterEach(function() {
+        server.close();
+    });
+
+    it("in page.url", function () {
+        runs(function() {
+            page.open("http://localhost:12345/", function(status) {
+                expect(status).toEqual("success");
+                complete = true;
+            });
+        });
+
+        waitsFor(function() { return complete; },
+                 "load should be completed", 1000);
+
+        runs(function() {
+            expect(page.url).toEqual(
+                "http://localhost:12345/%83y%81%5B%83W");
+            expect(page.plainText).toEqual("PASS");
+        });
+    });
+
+    it("in page.frameUrl", function () {
+        runs(function() {
+            page.open("http://localhost:12345/f", function(status) {
+                expect(status).toEqual("success");
+                complete = true;
+            });
+        })
+
+        waitsFor(function() { return complete; },
+                 "load should be completed", 1000);
+
+        runs(function() {
+            expect(page.url).toEqual("http://localhost:12345/f");
+            expect(page.framesCount).toEqual(2);
+
+            expect(page.switchToFrame("a")).toBeTruthy();
+            expect(page.frameUrl).toEqual("http://localhost:12345/%98g");
+            expect(page.framePlainText).toEqual("PASS");
+
+            expect(page.switchToParentFrame()).toBeTruthy();
+            expect(page.switchToFrame("b")).toBeTruthy();
+            expect(page.frameUrl).toEqual(
+                "http://localhost:12345/%95s%96%D1%82%C8%98_%91%88");
+            expect(page.framePlainText).toEqual("FLAME");
+        });
+    });
+
+    it("in arguments to onNavigationRequested", function () {
+        var n = 0;
+        var expectedUrls = [ "http://localhost:12345/",
+                             "http://localhost:12345/%83y%81%5B%83W" ];
+        page.onNavigationRequested = function (url, type, will, main) {
+            expect(url).toEqual(expectedUrls[n]);
+            n++;
+        };
+        runs(function() {
+            page.open("http://localhost:12345/", function(status) {
+                expect(status).toEqual("success");
+                complete = true;
+            });
+        });
+
+        waitsFor(function() { return complete; },
+                 "load should be completed", 1000);
+        runs(function() {
+            expect(n).toEqual(expectedUrls.length);
+            expect(page.plainText).toEqual("PASS");
+        });
+    });
+
+    it("in arguments to onResourceRequested and onResourceReceived", function () {
+        var n_req = 0;
+        var n_recv = 0;
+        var expectedUrls = [ "http://localhost:12345/r",
+                             "http://localhost:12345/%8F%91" ];
+        var receivedUrls = {};
+        page.onResourceRequested = function (req, nr) {
+            expect(req.url).toEqual(expectedUrls[n_req]);
+            n_req++;
+        };
+        page.onResourceReceived = function (resp) {
+            // This function may be called more than once per URL.
+            if (receivedUrls.hasOwnProperty(resp.url))
+                return;
+            receivedUrls[resp.url] = 1;
+            expect(resp.url).toEqual(expectedUrls[n_recv]);
+            n_recv++;
+        };
+        runs(function() {
+            page.open("http://localhost:12345/r", function(status) {
+                expect(status).toEqual("success");
+                complete = true;
+            });
+        });
+
+        waitsFor(function() { return complete; },
+                 "load should be completed", 1000);
+        runs(function() {
+            expect(n_req).toEqual(expectedUrls.length);
+            expect(n_recv).toEqual(expectedUrls.length);
+            expect(page.plainText).toEqual("PASS");
+        });
+    });
+
+    it("in arguments to onResourceError and onResourceTimeout", function () {
+        var n_timeout = 0;
+        var n_error = 0;
+        var expectedUrls_timeout = [ "http://localhost:12345/%89i%8Bv" ];
+        // the error hook is called for timeouts as well
+        var expectedUrls_error = [ "http://localhost:12345/%8C%CC%8F%E1",
+                                   "http://localhost:12345/%89i%8Bv" ];
+        page.onResourceTimeout = function (req) {
+            expect(req.url).toEqual(expectedUrls_timeout[n_timeout]);
+            n_timeout++;
+        };
+        page.onResourceError = function (err) {
+            expect(err.url).toEqual(expectedUrls_error[n_error]);
+            n_error++;
+        };
+
+        runs(function() {
+            page.open("http://localhost:12345/re", function(status) {
+                expect(status).toEqual("success");
+                complete = true;
+            });
+        });
+
+        waitsFor(function() { return complete; },
+                 "load should be completed", 1000);
+        runs(function() {
+            expect(n_timeout).toEqual(expectedUrls_timeout.length);
+            expect(n_error).toEqual(expectedUrls_error.length);
+        });
+    });
+});
+

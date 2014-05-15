@@ -386,11 +386,11 @@ void NetworkAccessManager::handleNetworkError()
     qDebug() << "Network - Resource request error:"
              << reply->error()
              << "(" << reply->errorString() << ")"
-             << "URL:" << reply->url().toString();
+             << "URL:" << reply->url().toEncoded();
 
     QVariantMap data;
     data["id"] = m_ids.value(reply);
-    data["url"] = reply->url().toString();
+    data["url"] = reply->url().toEncoded().data();
     data["errorCode"] = reply->error();
     data["errorString"] = reply->errorString();
 

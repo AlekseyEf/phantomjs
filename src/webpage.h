@@ -471,7 +471,7 @@ signals:
     void resourceError(const QVariant &errorData);
     void resourceTimeout(const QVariant &errorData);
     void urlChanged(const QUrl &url);
-    void navigationRequested(const QUrl &url, const QString &navigationType, bool navigationLocked, bool isMainFrame);
+    void navigationRequested(const QString &url, const QString &navigationType, bool navigationLocked, bool isMainFrame);
     void rawPageCreated(QObject *page);
     void closing(QObject *page);
 

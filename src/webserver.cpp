@@ -92,6 +92,57 @@ static void *callback(mg_event event,
     }
 }
 
+// Next two functions copied near-verbatim from
+// src/qt/src/corelib/tools/qbytearray.cpp (where they are not part of
+// the public API). See WebServer::handleRequest for why this is needed.
+
+static inline char toHexHelper(char c)
+{
+    static const char hexnumbers[] = "0123456789ABCDEF";
+    return hexnumbers[c & 0xf];
+}
+
+static void toPercentEncoding(QByteArray &ba, const char *dontEncode,
+                              const char *alsoEncode, char percent)
+{
+    if (ba.isEmpty())
+        return;
+
+    QByteArray input = ba;
+    int len = input.count();
+    const char *inputData = input.constData();
+    char *output = 0;
+    int length = 0;
+
+    for (int i = 0; i < len; ++i) {
+        unsigned char c = *inputData++;
+        if (((c >= 0x61 && c <= 0x7A) // ALPHA
+             || (c >= 0x41 && c <= 0x5A) // ALPHA
+             || (c >= 0x30 && c <= 0x39) // DIGIT
+             || c == 0x2D // -
+             || c == 0x2E // .
+             || c == 0x5F // _
+             || c == 0x7E // ~
+             || strchr(dontEncode, c))
+            && !strchr(alsoEncode, c)) {
+            if (output)
+                output[length] = c;
+            ++length;
+        } else {
+            if (!output) {
+                // detach now
+                ba.resize(len*3); // worst case
+                output = ba.data();
+            }
+            output[length++] = percent;
+            output[length++] = toHexHelper((c & 0xf0) >> 4);
+            output[length++] = toHexHelper(c & 0xf);
+        }
+    }
+    if (output)
+        ba.truncate(length);
+}
+
 WebServer::WebServer(QObject *parent)
     : QObject(parent)
     , m_ctx(0)
@@ -172,17 +223,26 @@ bool WebServer::handleRequest(mg_event event, mg_connection *conn, const mg_requ
     qDebug() << "HTTP Request - Query String" << request->query_string;
 
     if (request->request_method)
-        requestObject["method"] = QString::fromLocal8Bit(request->request_method);
+        requestObject["method"] = QString::fromAscii(request->request_method);
     if (request->http_version)
-        requestObject["httpVersion"] = QString::fromLocal8Bit(request->http_version);
+        requestObject["httpVersion"] = QString::fromAscii(request->http_version);
     if (request->status_code >=0)
         requestObject["statusCode"] = request->status_code;
 
+    // request->uri and request->query_string may contain arbitrary
+    // bytes, and their encoding is unknown.  We must not do anything
+    // that would cause an attempt to decode characters outside the
+    // ASCII printable range.  (The encoding might not even be ASCII-
+    // compatible!)  This unfortunately means we cannot use
+    // QUrl::toPercentEncoding.
     QByteArray uri(request->uri);
-    if (uri.startsWith('/'))
-        uri = '/' + QUrl::toPercentEncoding(QString::fromLatin1(request->uri + 1), "/?&#");
-    if (request->query_string)
-        uri.append('?').append(QByteArray(request->query_string));
+    toPercentEncoding(uri, "/?&#", "", '%');
+    if (request->query_string) {
+        QByteArray qs(request->query_string);
+        toPercentEncoding(qs, "?&", "", '%');
+        uri.append('?');
+        uri.append(qs);
+    }
     requestObject["url"] = uri.data();
 
 #if 0

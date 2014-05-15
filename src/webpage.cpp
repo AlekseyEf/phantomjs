@@ -195,7 +195,7 @@ protected:
         bool isNavigationLocked = m_webPage->navigationLocked();
         
         emit m_webPage->navigationRequested(
-                    request.url(),                   //< Requested URL
+                    request.url().toEncoded(),       //< Requested URL
                     navigationType,                  //< Navigation Type
                     !isNavigationLocked,             //< Will navigate (not locked)?
                     isMainFrame);                    //< Is main frame?
@@ -445,12 +445,16 @@ QString WebPage::frameTitle() const
 
 QString WebPage::url() const
 {
-    return m_mainFrame->url().toString();
+    return m_mainFrame->url().toEncoded();
 }
 
 QString WebPage::frameUrl() const
 {
-    return m_currentFrame->url().toString();
+    // Issue #11035: QWebFrame::url() is only set by QWebFrame::setUrl();
+    // it doesn't reflect a URL specified in a <frame> tag.
+    // QWebFrame::baseUrl() will be other than expected in the presence of
+    // <base href>, but it's less wrong.
+    return m_currentFrame->baseUrl().toEncoded();
 }
 
 bool WebPage::loading() const
