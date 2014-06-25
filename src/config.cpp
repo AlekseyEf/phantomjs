@@ -547,6 +547,7 @@ void Config::resetToDefaults()
     m_webdriverLogFile = QString();
     m_webdriverLogLevel = "INFO";
     m_webdriverSeleniumGridHub = QString();
+    m_javascriptEnabled = true;
 }
 
 void Config::setProxyAuthPass(const QString &value)
@@ -611,6 +612,8 @@ void Config::handleOption(const QString &option, const QVariant &value)
     booleanFlags << "local-to-remote-url-access";
     booleanFlags << "remote-debugger-autorun";
     booleanFlags << "web-security";
+    booleanFlags << "disable-javascript";
+
     if (booleanFlags.contains(option)) {
         if ((value != "true") && (value != "yes") && (value != "false") && (value != "no")) {
             setUnknownOption(QString("Invalid values for '%1' option.").arg(option));
@@ -691,6 +694,9 @@ void Config::handleOption(const QString &option, const QVariant &value)
     if (option == "web-security") {
         setWebSecurityEnabled(boolValue);
     }
+    if (option == "disable-javascript") {
+        setJavascriptEnabled(boolValue);
+    }
     if (option == "ssl-protocol") {
         setSslProtocol(value.toString());
     }
@@ -753,10 +759,12 @@ void Config::setSslCertificatesPath(const QString& sslCertificatesPath)
         m_sslCertificatesPath = sslCertificatesPath;
     }
 }
+
 bool Config::isJavascriptEnabled() const
 {
     return m_javascriptEnabled;
 }
+
 void Config::setJavascriptEnabled(bool value)
 {
     m_javascriptEnabled = value;
